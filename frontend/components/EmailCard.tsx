@@ -2,7 +2,8 @@
 
 import type { EmailRow } from "@/lib/types";
 import { PriorityBadge } from "@/components/PriorityBadge";
-import { DraftReply } from "@/components/DraftReply";
+import { DraftReplyPanel } from "@/components/DraftReplyPanel";
+import { ExpandableEmailBody } from "@/components/ExpandableEmailBody";
 
 export function EmailCard({
   email,
@@ -12,10 +13,14 @@ export function EmailCard({
   email: EmailRow;
   onClassify: (id: string) => void;
   onSendReply?: (emailId: string) => Promise<void>;
+  userId,
+  gmailConnected,
+}: {
+  email: EmailRow;
+  userId: string;
+  gmailConnected: boolean;
 }) {
-  const showDraft =
-    email.draft_reply &&
-    (email.priority_score ?? 0) >= 7;
+  const showDraft = Boolean(email.draft_reply);
 
   return (
     <article
@@ -58,17 +63,29 @@ export function EmailCard({
         >
           Re-run AI
         </button>
+
+      <div className="mt-3">
+        <ExpandableEmailBody emailId={email.id} userId={userId} />
         {email.list_unsubscribe_url && (
           <a
             href={email.list_unsubscribe_url}
             target="_blank"
             rel="noreferrer"
-            className="rounded-md border border-violet-800/50 px-2 py-1 text-xs text-violet-200 hover:bg-violet-950/40"
+            className="mt-2 inline-block text-xs text-violet-300/90 underline hover:text-violet-200"
           >
             List-Unsubscribe
           </a>
         )}
       </div>
+
+      {showDraft && email.draft_reply && (
+        <DraftReplyPanel
+          emailId={email.id}
+          userId={userId}
+          initialText={email.draft_reply}
+          gmailConnected={gmailConnected}
+        />
+      )}
     </article>
   );
 }

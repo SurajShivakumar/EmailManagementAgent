@@ -1,13 +1,33 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
-import { resolveUserId } from "@/lib/default-user";
-import { isGmailOAuthEnvConfigured } from "@/lib/gmail";
+import {
+  hasGmailBrowserSession,
+  resolveSessionUserId,
+} from "@/lib/session-user";
+import {
+  fetchGoogleUserIdentity,
+  isGmailOAuthEnvConfigured,
+} from "@/lib/gmail";
 
 /** Public-ish bootstrap: resolved user id + whether Gmail OAuth tokens exist. */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const client = createServerInsForge();
-    const userId = await resolveUserId(client, null);
+    const userId = await resolveSessionUserId(
+      client,
+      req,
+      req.nextUrl.searchParams.get("userId"),
+    );
+
+    if (!userId) {
+      return NextResponse.json({
+        userId: null,
+        gmailConnected: false,
+        gmailTokensWithoutBrowserSession: false,
+        gmailOAuthReady: isGmailOAuthEnvConfigured(),
+        gmailIdentity: null,
+      });
+    }
 
     const { data: cred } = await client.database
       .from("gmail_credentials")
@@ -15,10 +35,23 @@ export async function GET() {
       .eq("user_id", userId)
       .maybeSingle();
 
-    const gmailConnected = Boolean(cred?.refresh_token);
+    const hasTokens = Boolean(cred?.refresh_token);
+    const browserGmail = hasGmailBrowserSession(req);
+    const gmailConnected = hasTokens && browserGmail;
     const gmailOAuthReady = isGmailOAuthEnvConfigured();
 
-    return NextResponse.json({ userId, gmailConnected, gmailOAuthReady });
+    const gmailIdentity = gmailConnected
+      ? await fetchGoogleUserIdentity(client, userId)
+      : null;
+
+    return NextResponse.json({
+      userId,
+      gmailConnected,
+      /** Tokens exist in DB but this browser has not completed Gmail sign-in this session */
+      gmailTokensWithoutBrowserSession: hasTokens && !browserGmail,
+      gmailOAuthReady,
+      gmailIdentity,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

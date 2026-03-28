@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
-import { resolveUserId } from "@/lib/default-user";
+import { resolveSessionUserId } from "@/lib/session-user";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,6 +14,10 @@ export async function POST(req: NextRequest) {
 
     const client = createServerInsForge();
     const userId = await resolveUserId(client, null);
+    const userId = await resolveSessionUserId(client, req, body.userId ?? null);
+    if (!userId) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
 
     if (body.action === "delete" && body.emailIds?.length) {
       const { error } = await client.database

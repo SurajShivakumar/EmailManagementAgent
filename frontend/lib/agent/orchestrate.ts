@@ -1,13 +1,17 @@
 import type { InsForgeClient } from "@/lib/insforge-client-type";
 import { classifyEmail } from "@/lib/agent/classify";
-import { draftReply } from "@/lib/agent/draft";
+import { draftReply, type DraftGoogleProfile } from "@/lib/agent/draft";
+import { shouldGenerateDraftReply } from "@/lib/agent/should-draft";
 import { ensureSubscriptionRow } from "@/lib/agent/unsubscribe";
 import type { ClassificationResult, EmailRow } from "@/lib/types";
 
 export async function processEmailRow(
   client: InsForgeClient,
   email: EmailRow,
-  opts: { is_reply_to_sent: boolean },
+  opts: {
+    is_reply_to_sent: boolean;
+    googleProfile?: DraftGoogleProfile;
+  },
 ): Promise<{ classification: ClassificationResult }> {
   const classification = await classifyEmail(client, {
     sender: email.sender,
@@ -26,16 +30,17 @@ export async function processEmailRow(
   };
 
   let draftText: string | null = null;
-  if (
-    classification.priority_score >= 7 &&
-    classification.recommended_action === "draft_reply"
-  ) {
-    draftText = await draftReply(client, {
-      sender: email.sender,
-      subject: email.subject,
-      body_preview: email.body_preview,
-      summary: classification.summary,
-    });
+  if (shouldGenerateDraftReply(classification, email)) {
+    draftText = await draftReply(
+      client,
+      {
+        sender: email.sender,
+        subject: email.subject,
+        body_preview: email.body_preview,
+        summary: classification.summary,
+      },
+      opts.googleProfile ?? null,
+    );
     update.draft_reply = draftText;
   }
 
@@ -46,7 +51,11 @@ export async function processEmailRow(
 
   if (error) throw error;
 
-  if (classification.category === "newsletter") {
+  if (
+    classification.category === "newsletter" ||
+    (classification.category === "marketing" &&
+      Boolean(email.list_unsubscribe_url))
+  ) {
     await ensureSubscriptionRow(client, email.user_id, email.sender);
   }
 

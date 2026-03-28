@@ -2,17 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
 import { draftReply } from "@/lib/agent/draft";
 import { resolveUserId } from "@/lib/default-user";
+import { shouldGenerateDraftReplyFromRow } from "@/lib/agent/should-draft";
+import { fetchGoogleUserIdentity } from "@/lib/gmail";
+import {
+  requireGmailBrowserSession,
+  resolveSessionUserId,
+} from "@/lib/session-user";
 import type { EmailRow } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as { emailId?: string };
+    const denied = requireGmailBrowserSession(req);
+    if (denied) return denied;
+
+    const body = (await req.json()) as { emailId?: string; userId?: string };
     if (!body.emailId) {
       return NextResponse.json({ error: "emailId required" }, { status: 400 });
     }
 
     const client = createServerInsForge();
     const userId = await resolveUserId(client, null);
+    const sessionUserId = await resolveSessionUserId(
+      client,
+      req,
+      body.userId ?? null,
+    );
+    if (!sessionUserId) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
+
     const { data: email, error } = await client.database
       .from("emails")
       .select("*")
@@ -25,14 +43,22 @@ export async function POST(req: NextRequest) {
     }
 
     const row = email as EmailRow;
-    if ((row.priority_score ?? 0) < 7) {
+    if (row.user_id !== sessionUserId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const score = row.priority_score ?? 0;
+    if (score < 7 && !shouldGenerateDraftReplyFromRow(row)) {
       return NextResponse.json(
-        { error: "Draft only for priority_score >= 7" },
+        {
+          error:
+            "This message is not classified as needing a reply. Re-run AI classification first, or it may be low-priority / promotional.",
+        },
         { status: 400 },
       );
     }
 
-    const text = await draftReply(client, row);
+    const identity = await fetchGoogleUserIdentity(client, row.user_id);
+    const text = await draftReply(client, row, identity);
     const { error: upErr } = await client.database
       .from("emails")
       .update({ draft_reply: text })

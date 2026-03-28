@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
-import { resolveUserId } from "@/lib/default-user";
-import { fetchInboxBatch, getGmailForUser } from "@/lib/gmail";
+import {
+  requireGmailBrowserSession,
+  resolveSessionUserId,
+} from "@/lib/session-user";
+import {
+  fetchInboxBatch,
+  fetchGoogleUserIdentity,
+  getGmailForUser,
+} from "@/lib/gmail";
 import { processEmailRow } from "@/lib/agent/orchestrate";
 import type { EmailRow } from "@/lib/types";
 
 /** Pull recent inbox messages into InsForge `emails`, then classify each new row. */
 export async function POST(req: NextRequest) {
   try {
+    const denied = requireGmailBrowserSession(req);
+    if (denied) return denied;
+
     const client = createServerInsForge();
     const body = (await req.json().catch(() => ({}))) as {
       userId?: string;
@@ -25,6 +35,11 @@ export async function POST(req: NextRequest) {
         .eq("user_id", userId);
       if (wipeErr) throw wipeErr;
     }
+    const userId = await resolveSessionUserId(client, req, body.userId ?? null);
+    if (!userId) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
+    const maxResults = Math.min(body.maxResults ?? 50, 100);
 
     const gmail = await getGmailForUser(client, userId);
     if (!gmail) {
@@ -79,6 +94,7 @@ export async function POST(req: NextRequest) {
     }
 
     const batch = await fetchInboxBatch(gmail, maxResults);
+    const identity = await fetchGoogleUserIdentity(client, userId);
     let inserted = 0;
     let processed = 0;
 
@@ -155,6 +171,11 @@ export async function POST(req: NextRequest) {
             );
           }
         }
+        await processEmailRow(client, row as EmailRow, {
+          is_reply_to_sent: m.isReplyToSent,
+          googleProfile: identity,
+        });
+        processed += 1;
       }
     }
 

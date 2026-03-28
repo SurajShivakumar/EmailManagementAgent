@@ -20,10 +20,12 @@ Rules for category:
 - other: anything else
 
 Rules for recommended_action:
-- draft_reply: needs a personal reply soon (usually score >= 7 and direct_reply or action needed)
+- draft_reply: the sender clearly expects a written response — questions, direct replies to your thread, requests for approval/confirmation, deadlines, or a real person waiting on you. Use this whenever a human reply would be socially or professionally expected, even if the tone is casual.
 - bulk_delete_candidate: low priority (1-4) confirmation/marketing/newsletter clutter safe to bulk remove
 - unsubscribe_prompt: newsletter or marketing list with clear list-unsubscribe or mailing-list pattern
-- none: otherwise
+- none: FYI-only, automated receipts with no reply needed, shipping updates, or messages that need no response
+
+Be strict: do NOT use draft_reply for newsletters, promos, or one-way notifications. DO use draft_reply when is_reply_to_sent is true and they are engaging with your prior email, or when they ask something only you can answer.
 
 Return format:
 {

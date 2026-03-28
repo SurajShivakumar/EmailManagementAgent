@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
-import { resolveUserId } from "@/lib/default-user";
+import { resolveSessionUserId } from "@/lib/session-user";
 import { processEmailRow } from "@/lib/agent/orchestrate";
+import { fetchGoogleUserIdentity } from "@/lib/gmail";
 import type { EmailRow } from "@/lib/types";
 
 /** Demo seed: inserts sample emails and runs the agent pipeline. */
@@ -10,6 +11,10 @@ export async function POST(req: NextRequest) {
     const client = createServerInsForge();
     const body = (await req.json().catch(() => ({}))) as { userId?: string };
     const userId = await resolveUserId(client, null);
+    const userId = await resolveSessionUserId(client, req, body.userId ?? null);
+    if (!userId) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
 
     const samples = [
       {
@@ -58,6 +63,7 @@ export async function POST(req: NextRequest) {
     ];
 
     const createdIds: string[] = [];
+    const identity = await fetchGoogleUserIdentity(client, userId);
 
     for (const s of samples) {
       const { data: inserted, error: insErr } = await client.database
@@ -88,6 +94,7 @@ export async function POST(req: NextRequest) {
         if (row) {
           await processEmailRow(client, row as EmailRow, {
             is_reply_to_sent: s.is_reply_to_sent,
+            googleProfile: identity,
           });
         }
       }

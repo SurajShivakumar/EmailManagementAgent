@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
-import { resolveUserId } from "@/lib/default-user";
+import {
+  hasGmailBrowserSession,
+  resolveSessionUserId,
+} from "@/lib/session-user";
 import { groupBulkDeleteCandidates } from "@/lib/agent/categorize";
 import type { EmailRow } from "@/lib/types";
 
@@ -8,6 +11,20 @@ export async function GET(req: NextRequest) {
   try {
     const client = createServerInsForge();
     const userId = await resolveUserId(client, null);
+    const userId = await resolveSessionUserId(
+      client,
+      req,
+      req.nextUrl.searchParams.get("userId"),
+    );
+
+    if (!userId) {
+      return NextResponse.json({
+        userId: null,
+        emails: [],
+        bulkGroups: [],
+        subscriptions: [],
+      });
+    }
 
     const mode = req.nextUrl.searchParams.get("mode");
     const limitParam = req.nextUrl.searchParams.get("limit");
@@ -23,6 +40,13 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
       if (credErr) throw credErr;
       gmailAccountEmail = cred?.gmail_account_email?.toLowerCase() ?? null;
+    if (mode === "gmail_recent" && !hasGmailBrowserSession(req)) {
+      return NextResponse.json({
+        userId,
+        emails: [],
+        bulkGroups: [],
+        subscriptions: [],
+      });
     }
 
     let query = client.database
@@ -43,7 +67,7 @@ export async function GET(req: NextRequest) {
     }
 
     query = query
-      .order("received_at", { ascending: false, nullsFirst: true })
+      .order("received_at", { ascending: false, nullsFirst: false })
       .order("priority_score", { ascending: false, nullsFirst: false });
 
     if (limit != null) {

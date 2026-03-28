@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { gmailConsentUrl, isGmailOAuthEnvConfigured } from "@/lib/gmail";
-import { createServerInsForge } from "@/lib/insforge";
 import { resolveUserId } from "@/lib/default-user";
+import { createServerInsForge } from "@/lib/insforge";
 
 /** Start Gmail OAuth (redirect to Google). */
 export async function GET(req: NextRequest) {
