@@ -1,4 +1,5 @@
 import type { ClassificationResult, EmailRow } from "@/lib/types";
+import { isGoogleSecurityAlert } from "@/lib/google-security-alert";
 
 /** Heuristic: message text suggests someone expects a human reply. */
 const LIKELY_NEEDS_REPLY =
@@ -16,8 +17,9 @@ function isLowValueNoise(c: ClassificationResult): boolean {
  */
 export function shouldGenerateDraftReply(
   c: ClassificationResult,
-  email: Pick<EmailRow, "body_preview" | "subject">,
+  email: Pick<EmailRow, "body_preview" | "subject" | "sender">,
 ): boolean {
+  if (isGoogleSecurityAlert(email)) return false;
   if (isLowValueNoise(c)) return false;
   if (c.priority_score >= 7) return true;
   if (c.recommended_action === "bulk_delete_candidate" && c.priority_score <= 5) {
@@ -53,6 +55,7 @@ export function shouldGenerateDraftReply(
 export function shouldGenerateDraftReplyFromRow(
   email: EmailRow,
 ): boolean {
+  if (isGoogleSecurityAlert(email)) return false;
   const score = email.priority_score ?? 0;
   const c: ClassificationResult = {
     summary: email.summary ?? "",

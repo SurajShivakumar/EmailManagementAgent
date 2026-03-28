@@ -10,7 +10,6 @@ export async function POST(req: NextRequest) {
   try {
     const client = createServerInsForge();
     const body = (await req.json().catch(() => ({}))) as { userId?: string };
-    const userId = await resolveUserId(client, null);
     const userId = await resolveSessionUserId(client, req, body.userId ?? null);
     if (!userId) {
       return NextResponse.json({ error: "Not signed in" }, { status: 401 });

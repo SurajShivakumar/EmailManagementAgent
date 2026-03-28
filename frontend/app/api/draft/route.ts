@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
 import { draftReply } from "@/lib/agent/draft";
-import { resolveUserId } from "@/lib/default-user";
 import { shouldGenerateDraftReplyFromRow } from "@/lib/agent/should-draft";
 import { fetchGoogleUserIdentity } from "@/lib/gmail";
 import {
@@ -21,7 +20,6 @@ export async function POST(req: NextRequest) {
     }
 
     const client = createServerInsForge();
-    const userId = await resolveUserId(client, null);
     const sessionUserId = await resolveSessionUserId(
       client,
       req,
@@ -35,7 +33,7 @@ export async function POST(req: NextRequest) {
       .from("emails")
       .select("*")
       .eq("id", body.emailId)
-      .eq("user_id", userId)
+      .eq("user_id", sessionUserId)
       .single();
 
     if (error || !email) {
@@ -46,12 +44,11 @@ export async function POST(req: NextRequest) {
     if (row.user_id !== sessionUserId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const score = row.priority_score ?? 0;
-    if (score < 7 && !shouldGenerateDraftReplyFromRow(row)) {
+    if (!shouldGenerateDraftReplyFromRow(row)) {
       return NextResponse.json(
         {
           error:
-            "This message is not classified as needing a reply. Re-run AI classification first, or it may be low-priority / promotional.",
+            "This message is not set up for an AI reply (e.g. Google security notices, newsletters, or low-priority mail). Re-run classification if needed.",
         },
         { status: 400 },
       );
@@ -63,7 +60,7 @@ export async function POST(req: NextRequest) {
       .from("emails")
       .update({ draft_reply: text })
       .eq("id", body.emailId)
-      .eq("user_id", userId);
+      .eq("user_id", sessionUserId);
 
     if (upErr) throw upErr;
     return NextResponse.json({ draft_reply: text });

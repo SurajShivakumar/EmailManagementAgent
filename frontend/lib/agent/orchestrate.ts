@@ -3,6 +3,10 @@ import { classifyEmail } from "@/lib/agent/classify";
 import { draftReply, type DraftGoogleProfile } from "@/lib/agent/draft";
 import { shouldGenerateDraftReply } from "@/lib/agent/should-draft";
 import { ensureSubscriptionRow } from "@/lib/agent/unsubscribe";
+import {
+  isGoogleSecurityAlert,
+  normalizeGoogleSecurityAlertFields,
+} from "@/lib/google-security-alert";
 import type { ClassificationResult, EmailRow } from "@/lib/types";
 
 export async function processEmailRow(
@@ -13,13 +17,15 @@ export async function processEmailRow(
     googleProfile?: DraftGoogleProfile;
   },
 ): Promise<{ classification: ClassificationResult }> {
-  const classification = await classifyEmail(client, {
+  const raw = await classifyEmail(client, {
     sender: email.sender,
     subject: email.subject,
     body_preview: email.body_preview,
     is_reply_to_sent: opts.is_reply_to_sent,
     list_unsubscribe_url: email.list_unsubscribe_url,
   });
+
+  const classification = normalizeGoogleSecurityAlertFields(email, raw);
 
   const update: Record<string, unknown> = {
     summary: classification.summary,
@@ -29,8 +35,15 @@ export async function processEmailRow(
     recommended_action: classification.recommended_action,
   };
 
+  if (isGoogleSecurityAlert(email)) {
+    update.draft_reply = null;
+  }
+
   let draftText: string | null = null;
-  if (shouldGenerateDraftReply(classification, email)) {
+  if (
+    !isGoogleSecurityAlert(email) &&
+    shouldGenerateDraftReply(classification, email)
+  ) {
     draftText = await draftReply(
       client,
       {

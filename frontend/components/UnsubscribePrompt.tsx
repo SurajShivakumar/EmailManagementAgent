@@ -12,9 +12,11 @@ type Sub = {
 export function UnsubscribePrompt({
   subscriptions,
   onUpdated,
+  userId,
 }: {
   subscriptions: Sub[];
   onUpdated: () => void;
+  userId?: string | null;
 }) {
   const pending = subscriptions.filter((s) => !s.unsubscribed);
   const [busy, setBusy] = useState(false);
@@ -23,14 +25,6 @@ export function UnsubscribePrompt({
 
   if (!pending.length) return null;
 
-  async function markDone(id: string) {
-    const res = await fetch("/api/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "mark_unsubscribed",
-        subscriptionId: id,
-      }),
   function toggleKeep(id: string) {
     setKeepIds((prev) => {
       const next = new Set(prev);
@@ -107,7 +101,10 @@ export function UnsubscribePrompt({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: id, ...(userId ? { userId } : {}) }),
+        body: JSON.stringify({
+          subscriptionId: id,
+          ...(userId ? { userId } : {}),
+        }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error ?? "Unsubscribe failed");

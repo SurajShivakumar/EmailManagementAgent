@@ -35,11 +35,9 @@ export function gmailConsentUrl(state: string) {
     access_type: "offline",
     prompt: "consent",
     scope: [
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.send",
+      ...GMAIL_OAUTH_SCOPES,
       "https://www.googleapis.com/auth/drive.readonly",
     ],
-    scope: [...GMAIL_OAUTH_SCOPES],
     state,
   });
 }

@@ -20,9 +20,11 @@ const storageKey = (userId: string) => `bulk-dismiss:${userId}`;
 export function BulkDeletePrompt({
   groups,
   onDeleted,
+  userId,
 }: {
   groups: Group[];
   onDeleted: () => void;
+  userId?: string | null;
 }) {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 

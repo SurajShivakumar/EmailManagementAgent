@@ -24,8 +24,12 @@ export async function POST(req: NextRequest) {
       maxResults?: number;
       resetBeforeSync?: boolean;
     };
-    const userId = await resolveUserId(client, null);
-    const maxResults = Math.min(body.maxResults ?? 25, 50);
+    const userId = await resolveSessionUserId(client, req, body.userId ?? null);
+    if (!userId) {
+      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+    }
+
+    const maxResults = Math.min(body.maxResults ?? 50, 100);
     const resetBeforeSync = Boolean(body.resetBeforeSync);
 
     if (resetBeforeSync) {
@@ -35,11 +39,6 @@ export async function POST(req: NextRequest) {
         .eq("user_id", userId);
       if (wipeErr) throw wipeErr;
     }
-    const userId = await resolveSessionUserId(client, req, body.userId ?? null);
-    if (!userId) {
-      return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-    }
-    const maxResults = Math.min(body.maxResults ?? 50, 100);
 
     const gmail = await getGmailForUser(client, userId);
     if (!gmail) {
@@ -151,15 +150,14 @@ export async function POST(req: NextRequest) {
         try {
           await processEmailRow(client, row as EmailRow, {
             is_reply_to_sent: m.isReplyToSent,
+            googleProfile: identity,
           });
           processed += 1;
         } catch (classifyErr) {
-          // Log classification error but continue syncing
           console.warn(
             `Failed to classify email ${row.id}:`,
             classifyErr instanceof Error ? classifyErr.message : String(classifyErr),
           );
-          // Update email status to indicate classification failed
           const { error: statusErr } = await client.database
             .from("emails")
             .update({ status: "classification_failed" })
@@ -171,11 +169,6 @@ export async function POST(req: NextRequest) {
             );
           }
         }
-        await processEmailRow(client, row as EmailRow, {
-          is_reply_to_sent: m.isReplyToSent,
-          googleProfile: identity,
-        });
-        processed += 1;
       }
     }
 

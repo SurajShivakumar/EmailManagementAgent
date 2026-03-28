@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { createOAuth2, persistGmailTokens } from "@/lib/gmail";
 import {
   createOAuth2,
   persistGmailTokens,
@@ -63,17 +62,12 @@ export async function GET(req: NextRequest) {
       gmail_account_email: gmailAccountEmail,
     });
 
-    oauth2.setCredentials(tokens);
-    const gmail = google.gmail({ version: "v1", auth: oauth2 });
-    const profile = await gmail.users.getProfile({ userId: "me" });
-    const googleEmail = profile.data.emailAddress ?? null;
-
     await purgeSyncedGmailEmailsForUser(client, userId);
 
-    if (googleEmail) {
+    if (gmailAccountEmail) {
       const { error: linkErr } = await client.database
         .from("gmail_credentials")
-        .update({ linked_google_email: googleEmail })
+        .update({ linked_google_email: gmailAccountEmail })
         .eq("user_id", userId);
       if (linkErr) {
         console.warn(

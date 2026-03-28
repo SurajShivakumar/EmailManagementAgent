@@ -36,15 +36,19 @@ type GmailIdentity = {
 type Bootstrap = {
   userId: string | null;
   gmailConnected: boolean;
-  /** Stored OAuth tokens exist but this browser has not completed Gmail sign-in */
   gmailTokensWithoutBrowserSession: boolean;
   gmailOAuthReady: boolean;
   gmailIdentity: GmailIdentity | null;
 };
 
+function userQs(userId: string | null) {
+  return userId ? `?userId=${encodeURIComponent(userId)}` : "";
+}
+
 export function EmailList() {
   const router = useRouter();
   const search = useSearchParams();
+  const qOverride = search.get("userId");
 
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootErr, setBootErr] = useState<string | null>(null);
@@ -102,30 +106,28 @@ export function EmailList() {
 
   const loadAlerts = useCallback(async () => {
     if (!userId) return;
-    const res = await fetch("/api/emails");
     const res = await fetch(`/api/emails${qs}`, { credentials: "include" });
     const j = await res.json();
     if (!res.ok) return;
     setBulkGroups(j.bulkGroups ?? []);
     setSubscriptions(j.subscriptions ?? []);
-  }, [userId]);
+  }, [userId, qs]);
 
   const loadGmailPick = useCallback(async () => {
     if (!userId) return;
-    const res = await fetch("/api/emails?mode=gmail_recent&limit=25");
+    const sep = qs.includes("?") ? "&" : "?";
     const res = await fetch(
-      `/api/emails${qs}${qs.includes("?") ? "&" : "?"}mode=gmail_recent&limit=100`,
+      `/api/emails${qs}${sep}mode=gmail_recent&limit=100`,
       { credentials: "include" },
     );
     const j = await res.json();
     if (!res.ok) return;
     const list = (j.emails ?? []) as EmailRow[];
     setGmailEmails(list.filter((e) => e.status !== "deleted"));
-  }, [userId]);
+  }, [userId, qs]);
 
   const loadDemo = useCallback(async () => {
     if (!userId) return;
-    const res = await fetch("/api/emails?mode=demo");
     const sep = qs ? "&" : "?";
     const res = await fetch(`/api/emails${qs}${sep}mode=demo`, {
       credentials: "include",
@@ -135,7 +137,7 @@ export function EmailList() {
     setDemoEmails(
       ((j.emails ?? []) as EmailRow[]).filter((e) => e.status !== "deleted"),
     );
-  }, [userId]);
+  }, [userId, qs]);
 
   const refreshAll = useCallback(async () => {
     if (!userId) return;
@@ -145,28 +147,33 @@ export function EmailList() {
   }, [userId, loadAlerts, loadGmailPick, loadDemo]);
 
   const syncGmailInbox = useCallback(
-    async ({
-      maxResults = 10,
-      resetBeforeSync = false,
-    }: {
-      maxResults?: number;
-      resetBeforeSync?: boolean;
-    } = {}) => {
+    async (opts?: { maxResults?: number; resetBeforeSync?: boolean }) => {
       if (!userId) return;
+      const maxResults = opts?.maxResults ?? 25;
+      const resetBeforeSync = Boolean(opts?.resetBeforeSync);
       setSyncing(true);
+      setSyncError(null);
       try {
         const res = await fetch("/api/gmail/sync", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ maxResults, resetBeforeSync }),
+          body: JSON.stringify({ userId, maxResults, resetBeforeSync }),
         });
         if (!res.ok) {
           const j = await res.json().catch(() => ({}));
-          throw new Error(j.error ?? "Sync failed");
+          throw new Error((j.error as string) ?? "Sync failed");
         }
         await refreshAll();
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : "Sync failed");
       } finally {
         setSyncing(false);
+      }
+    },
+    [userId, refreshAll],
+  );
+
   const runInboxPipeline = useCallback(async () => {
     if (!userId || !gmailConnected) return;
     if (pipelineLockRef.current) return;
@@ -245,20 +252,14 @@ export function EmailList() {
     if (!userId || !gmailConnected) return;
 
     const oauthReturn = search.get("gmail") === "connected";
+    const tail = qOverride ? `?userId=${encodeURIComponent(qOverride)}` : "";
+
     const run = async () => {
       await runInboxPipeline();
-      const tail = qOverride
-        ? `?userId=${encodeURIComponent(qOverride)}`
-        : "";
       if (oauthReturn) router.replace(`/${tail}`);
     };
 
     if (oauthReturn) {
-      (async () => {
-        syncedOnceRef.current = true;
-        await syncGmailInbox({ maxResults: 25, resetBeforeSync: true });
-        router.replace("/");
-      })();
       syncedOnceRef.current = true;
       void run();
       return;
@@ -266,9 +267,6 @@ export function EmailList() {
 
     if (!syncedOnceRef.current) {
       syncedOnceRef.current = true;
-      syncGmailInbox({ maxResults: 25 });
-    }
-  }, [userId, gmailConnected, search, syncGmailInbox, router]);
       void run();
     }
   }, [
@@ -283,9 +281,7 @@ export function EmailList() {
   useEffect(() => {
     if (!userId || !gmailConnected) return;
     const id = window.setInterval(
-      () => {
-        void runInboxPipeline();
-      },
+      () => void runInboxPipeline(),
       4 * 60 * 1000,
     );
     return () => window.clearInterval(id);
@@ -325,7 +321,7 @@ export function EmailList() {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ userId }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
@@ -339,8 +335,9 @@ export function EmailList() {
   async function classifyOne(id: string) {
     const res = await fetch("/api/emails/classify", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emailId: id, is_reply_to_sent: false }),
+      body: JSON.stringify({ emailId: id, is_reply_to_sent: false, userId }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
@@ -350,33 +347,16 @@ export function EmailList() {
     await refreshAll();
   }
 
-  async function sendReply(emailId: string) {
-    if (!userId) return;
-    const res = await fetch("/api/gmail/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emailId }),
-    });
-
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      alert(j.error ?? "Could not send reply");
-      return;
-    }
-
-    await refreshAll();
-  }
-
   async function disconnectGmail() {
     const res = await fetch("/api/auth/gmail/disconnect", {
       method: "POST",
+      credentials: "include",
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
       alert(j.error ?? "Could not disconnect Gmail");
       return;
     }
-
     setBootstrap((prev) => (prev ? { ...prev, gmailConnected: false } : prev));
     setGmailEmails([]);
     router.replace("/");
@@ -450,12 +430,14 @@ export function EmailList() {
       </div>
     );
   }
+
   const gmailSetupHint =
     search.get("gmail_setup") === "1" || search.get("gmail_error");
   const gmailErrorRaw = search.get("gmail_error");
 
   function dismissGmailQueryParams() {
-    router.replace("/");
+    const tail = qOverride ? `?userId=${encodeURIComponent(qOverride)}` : "";
+    router.replace(`/${tail}`);
   }
 
   const displayEmail = gmailIdentity?.email?.trim() || null;
@@ -524,38 +506,7 @@ export function EmailList() {
               onClick={() => setShowDemo((v) => !v)}
               className="rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700/80"
             >
-              Sign in to Gmail
-            </button>
-          )}
-          <p className="max-w-md text-center text-xs text-slate-500">
-            {gmailOAuthReady
-              ? "You’ll be asked to allow read-only access to your Gmail inbox so we can fetch your latest messages and score them."
-              : "Configure Google OAuth in .env.local (see above) to enable this button."}
-          </p>
-        </div>
-      ) : (
-        <section className="mb-10 rounded-2xl border border-slate-700/80 bg-slate-900/40 p-6">
-          <h2 className="text-lg font-medium text-white">Your Gmail</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Showing your 25 most recent messages. Auto-checks every 15s.
-          </p>
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => syncGmailInbox({ maxResults: 25 })}
-              disabled={syncing}
-              className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm text-slate-100 hover:bg-slate-700 disabled:opacity-50"
-            >
-              {syncing ? "Refreshing…" : "Refresh inbox"}
               {showDemo ? "Hide demo emails" : "Demo emails"}
-            </button>
-            <button
-              type="button"
-              onClick={disconnectGmail}
-              className="rounded-lg border border-red-800/70 bg-red-950/40 px-4 py-2.5 text-sm text-red-100 hover:bg-red-900/40"
-            >
-              Log out Gmail
             </button>
           </div>
         </div>
@@ -575,65 +526,31 @@ export function EmailList() {
           <p className="mb-4 text-center text-sm text-red-400/90">{syncError}</p>
         )}
 
-          {gmailEmails.length > 0 && (
-            <ul className="mt-6 max-h-[70vh] space-y-4 overflow-auto pr-1">
-              {gmailEmails.map((email) => (
-                <li key={email.id}>
-                  <EmailCard
-                    email={email}
-                    onClassify={classifyOne}
-                    onSendReply={sendReply}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {gmailEmails.length === 0 && gmailConnected && !loading && !syncing && (
-            <p className="mt-6 text-sm text-slate-500">
-              No synced Gmail messages in the database yet. Click{" "}
-              <strong className="text-slate-400">Refresh inbox</strong> after
-              signing in.
+        {gmailConnected && (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-700/80 bg-slate-900/40 px-4 py-3">
+            <p className="text-xs text-slate-400">
+              Manual refresh and disconnect. Background sync also runs on a timer.
             </p>
-          )}
-
-          <div className="mt-6">
-            <StorageInfo />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void syncGmailInbox({ maxResults: 25 })}
+                disabled={syncing}
+                className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
+              >
+                {syncing ? "Refreshing…" : "Refresh inbox"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void disconnectGmail()}
+                className="rounded-lg border border-red-800/70 bg-red-950/40 px-3 py-2 text-xs font-medium text-red-100 hover:bg-red-900/40"
+              >
+                Disconnect Gmail
+              </button>
+            </div>
           </div>
-        </section>
-      )}
+        )}
 
-      <section className="mb-10 rounded-2xl border border-dashed border-amber-900/50 bg-amber-950/10 p-6">
-        <div className="mb-4 border-b border-amber-900/30 pb-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200/90">
-            Demo emails
-          </h2>
-          <p className="mt-1 text-xs text-amber-200/50">
-            Sample messages only — not from your real inbox. Use this to preview
-            summaries, scores, and drafts without Gmail.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={seedDemo}
-          className="mb-6 rounded-lg bg-amber-900/40 px-4 py-2 text-sm font-medium text-amber-100 ring-1 ring-amber-800/50 hover:bg-amber-800/40"
-        >
-          Load demo emails
-        </button>
-
-        {demoEmails.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            No demo emails loaded. Click the button above to insert samples.
-          </p>
-        ) : (
-          <ul className="space-y-4">
-            {demoEmails.map((e) => (
-              <li key={e.id} className="relative">
-                <span className="absolute -left-1 -top-2 rounded bg-amber-900/80 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-100">
-                  Demo
-                </span>
-                <EmailCard email={e} onClassify={classifyOne} />
         {gmailTokensWithoutBrowserSession &&
           !gmailConnected &&
           gmailOAuthReady && (
@@ -642,8 +559,7 @@ export function EmailList() {
                 Gmail isn’t active in this browser
               </p>
               <p className="mt-2 text-xs text-sky-200/80">
-                Your account may already be linked on the server. Sign in to
-                Gmail here so only this session can read or sync your inbox.
+                Sign in to Gmail here so this session can sync your inbox.
               </p>
               <a
                 href={signInHref}
@@ -691,8 +607,8 @@ export function EmailList() {
               <li>
                 Set <code className="rounded bg-black/30 px-1">GMAIL_CLIENT_ID</code>,{" "}
                 <code className="rounded bg-black/30 px-1">GMAIL_CLIENT_SECRET</code>, and{" "}
-                <code className="rounded bg-black/30 px-1">GMAIL_REDIRECT_URI</code> (same URL as
-                above) in <code className="rounded bg-black/30 px-1">.env.local</code>.
+                <code className="rounded bg-black/30 px-1">GMAIL_REDIRECT_URI</code> in{" "}
+                <code className="rounded bg-black/30 px-1">.env.local</code>.
               </li>
             </ul>
             {gmailErrorRaw && (
@@ -708,14 +624,6 @@ export function EmailList() {
           </div>
         )}
 
-      <BulkDeletePrompt
-        groups={bulkGroups}
-        onDeleted={refreshAll}
-      />
-      <UnsubscribePrompt
-        subscriptions={subscriptions}
-        onUpdated={refreshAll}
-      />
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
           <main className="min-w-0 flex-1 lg:max-w-none">
             {!gmailConnected ? (
@@ -738,7 +646,7 @@ export function EmailList() {
                 )}
                 <p className="max-w-md text-center text-xs text-slate-500">
                   {gmailOAuthReady
-                    ? "Allow Gmail read + send to sync your inbox, draft replies, and send from the app."
+                    ? "Allow Gmail access to sync your inbox, draft replies, and send from the app."
                     : "Configure Google OAuth in .env.local (see above) to enable this button."}
                 </p>
               </div>
@@ -746,8 +654,8 @@ export function EmailList() {
               <section className="rounded-2xl border border-slate-700/80 bg-slate-900/40 p-5 md:p-6">
                 <h2 className="text-lg font-medium text-white">Your Gmail</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Inbox syncs automatically. Smart inbox sorts by AI score; Recent
-                  is newest first. Use View more to read the original message.
+                  Smart inbox sorts by AI score; Recent is newest first. Open an email
+                  to read the full message.
                 </p>
 
                 <div className="mt-4">
@@ -782,6 +690,7 @@ export function EmailList() {
                           email={e}
                           userId={userId}
                           gmailConnected={gmailConnected}
+                          variant="recent"
                         />
                       </li>
                     ))}
@@ -804,11 +713,14 @@ export function EmailList() {
                   !loading &&
                   !syncing && (
                     <p className="mt-6 text-sm text-slate-500">
-                      No synced Gmail messages yet. Inbox will populate after
-                      sign-in.
+                      No synced Gmail messages yet. Use Refresh inbox or wait for sync.
                     </p>
                   )
                 )}
+
+                <div className="mt-8 border-t border-slate-800/80 pt-6">
+                  <StorageInfo />
+                </div>
               </section>
             )}
 
@@ -846,6 +758,7 @@ export function EmailList() {
                           email={e}
                           userId={userId}
                           gmailConnected={false}
+                          onClassify={classifyOne}
                         />
                       </li>
                     ))}

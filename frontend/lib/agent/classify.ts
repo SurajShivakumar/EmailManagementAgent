@@ -25,7 +25,9 @@ Rules for recommended_action:
 - unsubscribe_prompt: newsletter or marketing list with clear list-unsubscribe or mailing-list pattern
 - none: FYI-only, automated receipts with no reply needed, shipping updates, or messages that need no response
 
-Be strict: do NOT use draft_reply for newsletters, promos, or one-way notifications. DO use draft_reply when is_reply_to_sent is true and they are engaging with your prior email, or when they ask something only you can answer.
+Google account security alerts, sign-in notifications, and 2-step verification messages from Google are one-way: use priority_score 5-6, recommended_action none, never draft_reply.
+
+Be strict: do NOT use draft_reply for newsletters, promos, one-way notifications, or Google security/sign-in alerts. DO use draft_reply when is_reply_to_sent is true and they are engaging with your prior email, or when they ask something only you can answer.
 
 Return format:
 {

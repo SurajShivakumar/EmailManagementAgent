@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
 import { processEmailRow } from "@/lib/agent/orchestrate";
-import { resolveUserId } from "@/lib/default-user";
 import { fetchGoogleUserIdentity } from "@/lib/gmail";
 import {
   requireGmailBrowserSession,
@@ -24,7 +23,6 @@ export async function POST(req: NextRequest) {
     }
 
     const client = createServerInsForge();
-    const userId = await resolveUserId(client, null);
     const sessionUserId = await resolveSessionUserId(
       client,
       req,
@@ -38,7 +36,7 @@ export async function POST(req: NextRequest) {
       .from("emails")
       .select("*")
       .eq("id", body.emailId)
-      .eq("user_id", userId)
+      .eq("user_id", sessionUserId)
       .single();
 
     if (fetchErr || !email) {

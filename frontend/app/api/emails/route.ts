@@ -10,7 +10,6 @@ import type { EmailRow } from "@/lib/types";
 export async function GET(req: NextRequest) {
   try {
     const client = createServerInsForge();
-    const userId = await resolveUserId(client, null);
     const userId = await resolveSessionUserId(
       client,
       req,
@@ -31,6 +30,15 @@ export async function GET(req: NextRequest) {
     const limit =
       limitParam != null ? Math.min(parseInt(limitParam, 10) || 50, 100) : null;
 
+    if (mode === "gmail_recent" && !hasGmailBrowserSession(req)) {
+      return NextResponse.json({
+        userId,
+        emails: [],
+        bulkGroups: [],
+        subscriptions: [],
+      });
+    }
+
     let gmailAccountEmail: string | null = null;
     if (mode === "gmail_recent") {
       const { data: cred, error: credErr } = await client.database
@@ -40,13 +48,6 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
       if (credErr) throw credErr;
       gmailAccountEmail = cred?.gmail_account_email?.toLowerCase() ?? null;
-    if (mode === "gmail_recent" && !hasGmailBrowserSession(req)) {
-      return NextResponse.json({
-        userId,
-        emails: [],
-        bulkGroups: [],
-        subscriptions: [],
-      });
     }
 
     let query = client.database

@@ -30,7 +30,7 @@ export function requireGmailBrowserSession(req: NextRequest): NextResponse | nul
 }
 
 /** InsForge / Postgres ids are usually UUIDs; allow alphanum ids without weird chars. */
-function looksLikeSessionId(v: string): boolean {
+export function looksLikeSessionId(v: string): boolean {
   const t = v.trim();
   if (t.length < 8 || t.length > 200) return false;
   if (/[<>{}"'\s\\]/.test(t)) return false;
