@@ -4,17 +4,17 @@
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
-      "computedHash": "645b891da1edbae76ab79c7b088d4e73397464f8396edaf773c0e01971ce75d6"
+      "computedHash": "d31e234f0c90694a670222cdd1dafa853e051d7066beda389f1097c22dadd461"
     },
     "insforge": {
       "source": "insforge/agent-skills",
       "sourceType": "github",
-      "computedHash": "3a5a40aa1a9ca2879efaa49d8dcad2b1a977a519abc75a2f61ace5ad8e0ba2f8"
+      "computedHash": "06c2983818ce44f1a4b9c3c4da2e992047504a57b61b3a8cd17de163000b51c4"
     },
     "insforge-cli": {
       "source": "insforge/agent-skills",
       "sourceType": "github",
-      "computedHash": "727651aa7e8d8dba4edb2f3a64f7ecd93195763c055f0b7664389acc564dac90"
+      "computedHash": "31da132e3ccd87aeaf680d309c1373b7344e3198156fc586f1e622d2438920ae"
     }
   }
 }

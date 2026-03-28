@@ -1,11 +1,17 @@
 import { createClient } from "@insforge/sdk";
 
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
 export function createServerInsForge() {
-  const baseUrl = process.env.NEXT_PUBLIC_INSFORGE_URL;
+  const baseUrlRaw = process.env.NEXT_PUBLIC_INSFORGE_URL;
   const anonKey = process.env.INSFORGE_ANON_KEY;
-  if (!baseUrl || !anonKey) {
+  if (!baseUrlRaw || !anonKey) {
     throw new Error("Missing NEXT_PUBLIC_INSFORGE_URL or INSFORGE_ANON_KEY");
   }
+
+  const baseUrl = normalizeBaseUrl(baseUrlRaw);
   return createClient({ baseUrl, anonKey });
 }
 

@@ -11,12 +11,13 @@ export type RecommendedAction =
   | "unsubscribe_prompt"
   | "none";
 
-export type EmailStatus = "pending" | "actioned" | "deleted";
+export type EmailStatus = "pending" | "actioned" | "deleted" | "classification_failed";
 
 export type EmailRow = {
   id: string;
   user_id: string;
   gmail_id: string | null;
+  gmail_account_email: string | null;
   sender: string;
   subject: string;
   body_preview: string | null;

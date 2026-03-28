@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
 import { processEmailRow } from "@/lib/agent/orchestrate";
+import { resolveUserId } from "@/lib/default-user";
 import type { EmailRow } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -14,10 +15,12 @@ export async function POST(req: NextRequest) {
     }
 
     const client = createServerInsForge();
+    const userId = await resolveUserId(client, null);
     const { data: email, error: fetchErr } = await client.database
       .from("emails")
       .select("*")
       .eq("id", body.emailId)
+      .eq("user_id", userId)
       .single();
 
     if (fetchErr || !email) {

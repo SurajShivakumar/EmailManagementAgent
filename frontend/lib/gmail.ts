@@ -24,9 +24,25 @@ export function gmailConsentUrl(state: string) {
   return oauth2.generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
-    scope: ["https://www.googleapis.com/auth/gmail.readonly"],
+    scope: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/drive.readonly",
+    ],
     state,
   });
+}
+
+export function parseSenderEmailAddress(sender: string): string | null {
+  const angle = sender.match(/<([^>]+)>/);
+  if (angle?.[1]) return angle[1].trim();
+
+  const plain = sender.trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(plain)) {
+    return plain;
+  }
+
+  return null;
 }
 
 export async function getGmailForUser(client: InsForgeClient, userId: string) {
@@ -77,11 +93,12 @@ export async function persistGmailTokens(
     access_token?: string | null;
     refresh_token?: string | null;
     expiry_date?: number | null;
+    gmail_account_email?: string | null;
   },
 ) {
   const { data: prev } = await client.database
     .from("gmail_credentials")
-    .select("refresh_token, access_token")
+    .select("refresh_token, access_token, gmail_account_email")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -92,6 +109,10 @@ export async function persistGmailTokens(
     token_expires_at: tokens.expiry_date
       ? new Date(tokens.expiry_date).toISOString()
       : null,
+    gmail_account_email:
+      tokens.gmail_account_email?.toLowerCase() ??
+      prev?.gmail_account_email ??
+      null,
     updated_at: new Date().toISOString(),
   };
 

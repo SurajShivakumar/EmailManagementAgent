@@ -10,11 +10,9 @@ type Sub = {
 export function UnsubscribePrompt({
   subscriptions,
   onUpdated,
-  userId,
 }: {
   subscriptions: Sub[];
   onUpdated: () => void;
-  userId?: string | null;
 }) {
   const pending = subscriptions.filter((s) => !s.unsubscribed);
   if (!pending.length) return null;
@@ -26,7 +24,6 @@ export function UnsubscribePrompt({
       body: JSON.stringify({
         action: "mark_unsubscribed",
         subscriptionId: id,
-        ...(userId ? { userId } : {}),
       }),
     });
     if (!res.ok) {

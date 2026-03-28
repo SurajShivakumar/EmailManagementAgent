@@ -12,9 +12,19 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as {
       userId?: string;
       maxResults?: number;
+      resetBeforeSync?: boolean;
     };
-    const userId = await resolveUserId(client, body.userId ?? null);
+    const userId = await resolveUserId(client, null);
     const maxResults = Math.min(body.maxResults ?? 25, 50);
+    const resetBeforeSync = Boolean(body.resetBeforeSync);
+
+    if (resetBeforeSync) {
+      const { error: wipeErr } = await client.database
+        .from("emails")
+        .delete()
+        .eq("user_id", userId);
+      if (wipeErr) throw wipeErr;
+    }
 
     const gmail = await getGmailForUser(client, userId);
     if (!gmail) {
@@ -24,6 +34,50 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { data: cred, error: credErr } = await client.database
+      .from("gmail_credentials")
+      .select("gmail_account_email")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (credErr) throw credErr;
+    let gmailAccountEmail = cred?.gmail_account_email?.toLowerCase() ?? null;
+
+    if (!gmailAccountEmail) {
+      const profile = await gmail.users.getProfile({ userId: "me" });
+      gmailAccountEmail = profile.data.emailAddress?.toLowerCase() ?? null;
+      if (gmailAccountEmail) {
+        const { error: upCredErr } = await client.database
+          .from("gmail_credentials")
+          .update({ gmail_account_email: gmailAccountEmail })
+          .eq("user_id", userId);
+        if (upCredErr) throw upCredErr;
+      }
+    }
+
+    if (gmailAccountEmail) {
+      const baseCleanup = client.database
+        .from("emails")
+        .delete()
+        .eq("user_id", userId)
+        .not("gmail_id", "is", null)
+        .not("gmail_id", "ilike", "seed%");
+
+      const { error: nullTagErr } = await baseCleanup.is(
+        "gmail_account_email",
+        null,
+      );
+      if (nullTagErr) throw nullTagErr;
+
+      const { error: otherAccountErr } = await client.database
+        .from("emails")
+        .delete()
+        .eq("user_id", userId)
+        .not("gmail_id", "is", null)
+        .not("gmail_id", "ilike", "seed%")
+        .neq("gmail_account_email", gmailAccountEmail);
+      if (otherAccountErr) throw otherAccountErr;
+    }
+
     const batch = await fetchInboxBatch(gmail, maxResults);
     let inserted = 0;
     let processed = 0;
@@ -31,11 +85,31 @@ export async function POST(req: NextRequest) {
     for (const m of batch) {
       const { data: existing } = await client.database
         .from("emails")
-        .select("id")
+        .select("id, status")
+        .eq("user_id", userId)
         .eq("gmail_id", m.gmailId)
         .maybeSingle();
 
-      if (existing) continue;
+      if (existing) {
+        // If this email was previously marked deleted, revive it on sync.
+        if ((existing as { status?: string | null }).status === "deleted") {
+          const { error: reviveErr } = await client.database
+            .from("emails")
+            .update({
+              status: "pending",
+              gmail_account_email: gmailAccountEmail,
+              sender: m.sender,
+              subject: m.subject,
+              body_preview: m.bodyPreview,
+              list_unsubscribe_url: m.listUnsubscribe,
+              received_at: m.internalDate ?? new Date().toISOString(),
+            })
+            .eq("id", (existing as { id: string }).id);
+          if (reviveErr) throw reviveErr;
+          inserted += 1;
+        }
+        continue;
+      }
 
       const { data: row, error: insErr } = await client.database
         .from("emails")
@@ -43,6 +117,7 @@ export async function POST(req: NextRequest) {
           {
             user_id: userId,
             gmail_id: m.gmailId,
+            gmail_account_email: gmailAccountEmail,
             sender: m.sender,
             subject: m.subject,
             body_preview: m.bodyPreview,
@@ -57,10 +132,29 @@ export async function POST(req: NextRequest) {
       if (insErr) throw insErr;
       inserted += 1;
       if (row) {
-        await processEmailRow(client, row as EmailRow, {
-          is_reply_to_sent: m.isReplyToSent,
-        });
-        processed += 1;
+        try {
+          await processEmailRow(client, row as EmailRow, {
+            is_reply_to_sent: m.isReplyToSent,
+          });
+          processed += 1;
+        } catch (classifyErr) {
+          // Log classification error but continue syncing
+          console.warn(
+            `Failed to classify email ${row.id}:`,
+            classifyErr instanceof Error ? classifyErr.message : String(classifyErr),
+          );
+          // Update email status to indicate classification failed
+          const { error: statusErr } = await client.database
+            .from("emails")
+            .update({ status: "classification_failed" })
+            .eq("id", row.id);
+          if (statusErr) {
+            console.warn(
+              `Failed to update email status for ${row.id}:`,
+              statusErr,
+            );
+          }
+        }
       }
     }
 

@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     };
 
     const client = createServerInsForge();
-    const userId = await resolveUserId(client, body.userId ?? null);
+    const userId = await resolveUserId(client, null);
 
     if (body.action === "delete" && body.emailIds?.length) {
       const { error } = await client.database

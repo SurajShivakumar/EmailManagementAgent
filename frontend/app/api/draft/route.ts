@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerInsForge } from "@/lib/insforge";
 import { draftReply } from "@/lib/agent/draft";
+import { resolveUserId } from "@/lib/default-user";
 import type { EmailRow } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -11,10 +12,12 @@ export async function POST(req: NextRequest) {
     }
 
     const client = createServerInsForge();
+    const userId = await resolveUserId(client, null);
     const { data: email, error } = await client.database
       .from("emails")
       .select("*")
       .eq("id", body.emailId)
+      .eq("user_id", userId)
       .single();
 
     if (error || !email) {
@@ -33,7 +36,8 @@ export async function POST(req: NextRequest) {
     const { error: upErr } = await client.database
       .from("emails")
       .update({ draft_reply: text })
-      .eq("id", body.emailId);
+      .eq("id", body.emailId)
+      .eq("user_id", userId);
 
     if (upErr) throw upErr;
     return NextResponse.json({ draft_reply: text });

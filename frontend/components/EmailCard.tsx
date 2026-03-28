@@ -7,9 +7,11 @@ import { DraftReply } from "@/components/DraftReply";
 export function EmailCard({
   email,
   onClassify,
+  onSendReply,
 }: {
   email: EmailRow;
   onClassify: (id: string) => void;
+  onSendReply?: (emailId: string) => Promise<void>;
 }) {
   const showDraft =
     email.draft_reply &&
@@ -42,7 +44,12 @@ export function EmailCard({
           </span>
         )}
       </div>
-      {showDraft && <DraftReply text={email.draft_reply!} />}
+      {showDraft && (
+        <DraftReply
+          text={email.draft_reply!}
+          onSend={onSendReply ? () => onSendReply(email.id) : undefined}
+        />
+      )}
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"

@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const client = createServerInsForge();
     const body = (await req.json().catch(() => ({}))) as { userId?: string };
-    const userId = await resolveUserId(client, body.userId ?? null);
+    const userId = await resolveUserId(client, null);
 
     const samples = [
       {

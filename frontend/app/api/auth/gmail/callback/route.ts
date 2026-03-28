@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { google } from "googleapis";
 import { createOAuth2, persistGmailTokens } from "@/lib/gmail";
 import { createServerInsForge } from "@/lib/insforge";
 
@@ -31,11 +32,18 @@ export async function GET(req: NextRequest) {
   try {
     const oauth2 = createOAuth2();
     const { tokens } = await oauth2.getToken(code);
+    oauth2.setCredentials(tokens);
+
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
+    const profile = await gmail.users.getProfile({ userId: "me" });
+    const gmailAccountEmail = profile.data.emailAddress?.toLowerCase() ?? null;
+
     const client = createServerInsForge();
     await persistGmailTokens(client, userId, {
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token,
       expiry_date: tokens.expiry_date,
+      gmail_account_email: gmailAccountEmail,
     });
     base.pathname = "/";
     base.searchParams.set("gmail", "connected");

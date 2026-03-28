@@ -15,10 +15,7 @@ export async function GET(req: NextRequest) {
     }
 
     const client = createServerInsForge();
-    const userId = await resolveUserId(
-      client,
-      req.nextUrl.searchParams.get("userId"),
-    );
+    const userId = await resolveUserId(client, null);
     const state = Buffer.from(JSON.stringify({ userId }), "utf8").toString(
       "base64url",
     );

@@ -12,11 +12,9 @@ const LABELS: Record<string, string> = {
 export function BulkDeletePrompt({
   groups,
   onDeleted,
-  userId,
 }: {
   groups: Group[];
   onDeleted: () => void;
-  userId?: string | null;
 }) {
   if (!groups.length) return null;
 
@@ -27,7 +25,6 @@ export function BulkDeletePrompt({
       body: JSON.stringify({
         action: "delete",
         category,
-        ...(userId ? { userId } : {}),
       }),
     });
     if (!res.ok) {
